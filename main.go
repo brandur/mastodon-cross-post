@@ -318,6 +318,8 @@ func syncTwitter(ctx context.Context, conf *Conf, client *mastodon.Client, sourc
 	for _, tweet := range tweetCandidates {
 		var distance int
 		var matchingStatus *mastodon.Status
+
+	StatusChecksLoop:
 		for _, status := range statuses {
 			originalContent := tootToTweet(status)
 
@@ -346,7 +348,7 @@ func syncTwitter(ctx context.Context, conf *Conf, client *mastodon.Client, sourc
 				distance = levenshtein.ComputeDistance(originalContent, tweetToToot(tweet))
 				if distance < 10 {
 					matchingStatus = status
-					break
+					break StatusChecksLoop
 				}
 			}
 		}
@@ -407,6 +409,7 @@ func tootToTweet(status *mastodon.Status) string {
 }
 
 func tweetToTootV1(tweet *Tweet) string {
+	// Originally did nothing with the tweet's content.
 	return tweet.Text
 }
 
@@ -420,6 +423,15 @@ func tweetToTootV2(tweet *Tweet) string {
 		for _, url := range tweet.Entities.URLs {
 			content = strings.Replace(content, url.URL, url.ExpandedURL, -1)
 		}
+	}
+
+	// Include a link to retweets because the retweet content gets truncated by
+	// Twitter and isn't of much use on Mastodon unfortunately (links are often
+	// near the end).
+	if tweet.Retweet != nil {
+		retweetURL := fmt.Sprintf("https://twitter.com/%s/status/%v",
+			tweet.Retweet.User, tweet.Retweet.StatusID)
+		content += "\n\n" + retweetURL
 	}
 
 	return content
