@@ -11,6 +11,7 @@ import (
 	"os"
 	"path"
 	"path/filepath"
+	"regexp"
 	"strings"
 	"time"
 
@@ -413,6 +414,8 @@ func tweetToTootV1(tweet *Tweet) string {
 	return tweet.Text
 }
 
+var endTcoShortLinkRE = regexp.MustCompile(` https://t\.co/\w{5,}$`)
+
 func tweetToTootV2(tweet *Tweet) string {
 	content := tweet.Text
 
@@ -423,6 +426,18 @@ func tweetToTootV2(tweet *Tweet) string {
 		for _, url := range tweet.Entities.URLs {
 			content = strings.Replace(content, url.URL, url.ExpandedURL, -1)
 		}
+	}
+
+	// When tweet media is embedded, Twitter adds one last shortlink back to
+	// the original link, which we'll prune here.
+	//
+	// Note: This should come after our URL replacement step above so we
+	// eliminate the possibility of ever accidentally replacing a legitimate
+	// URL. These media shortlinks don't have an entry in
+	// `tweet.Entities.URLs`, so they will remain `t.co` URLs even after the
+	// replacement step has finished.
+	if tweet.Entities != nil && tweet.Entities.Medias != nil {
+		content = endTcoShortLinkRE.ReplaceAllString(content, "")
 	}
 
 	// Include a link to retweets because the retweet content gets truncated by
