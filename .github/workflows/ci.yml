@@ -59,7 +59,7 @@ jobs:
       - name: "Sync"
         run: ./mastodon-cross-post data/twitter.toml
         env:
-          DRY_RUN: true
+          DRY_RUN: false
           MASTODON_ACCESS_TOKEN: ${{ secrets.MASTODON_ACCESS_TOKEN }}
           MASTODON_SERVER_URL: "https://mastodon.social"
           MAX_TWEETS_TO_SYNC: 1
