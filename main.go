@@ -257,9 +257,10 @@ func syncTweet(ctx context.Context, conf *Conf, client *mastodon.Client, tweet *
 	if conf.DryRun {
 		logger.Infof("Would have published tweet: %s", tweetSample)
 	} else {
+
 		status, err := client.PostStatus(ctx, &mastodon.Toot{
 			MediaIDs: attachmentIDs,
-			Status:   tweet.Text,
+			Status:   tweetToTootV1(tweet),
 		})
 		if err != nil {
 			return fmt.Errorf("error posting status: %w", err)
@@ -318,13 +319,16 @@ func syncTwitter(ctx context.Context, conf *Conf, client *mastodon.Client, sourc
 		var distance int
 		var matchingStatus *mastodon.Status
 		for _, status := range statuses {
-			originalContent := status.Content
-			originalContent = strings.Replace(originalContent, "</p><p>", "\n\n", -1)
-			originalContent = strip.StripTags(originalContent)
-			originalContent = html.UnescapeString(originalContent)
+			originalContent := tootToTweet(status)
 
-			//logger.Infof("status = %v", originalContent)
-			//logger.Infof("text = %v", tweet.Text)
+			// Go through every tweet to too version we've ever had so that if
+			// a new one produces a significantly different enough result from
+			// one that posted an earlier status to Mastodon, we don't
+			// accidentally mistake it for a new tweet.
+			tweetToTootImplementations := []func(*Tweet) string{
+				tweetToTootV2,
+				tweetToTootV1,
+			}
 
 			// Unfortunately, once a status is posted to Masotodon, it does a
 			// lot of post-manipulation on the string, including adding HTML
@@ -335,10 +339,15 @@ func syncTwitter(ctx context.Context, conf *Conf, client *mastodon.Client, sourc
 			// worried this'll cause degenerate behavior along some edge I
 			// haven't tested. So here, we use Levenschtein distance to call a
 			// match as long as it looks reasonably close.
-			distance = levenshtein.ComputeDistance(originalContent, tweet.Text)
-			if distance < 10 {
-				matchingStatus = status
-				break
+			for _, tweetToToot := range tweetToTootImplementations {
+				//logger.Infof("status = %v", originalContent)
+				//logger.Infof("text = %v", tweet.Text)
+
+				distance = levenshtein.ComputeDistance(originalContent, tweetToToot(tweet))
+				if distance < 10 {
+					matchingStatus = status
+					break
+				}
 			}
 		}
 
@@ -387,4 +396,31 @@ func syncTwitter(ctx context.Context, conf *Conf, client *mastodon.Client, sourc
 	}
 
 	return nil
+}
+
+func tootToTweet(status *mastodon.Status) string {
+	content := status.Content
+	content = strings.Replace(content, "</p><p>", "\n\n", -1)
+	content = strip.StripTags(content)
+	content = html.UnescapeString(content)
+	return content
+}
+
+func tweetToTootV1(tweet *Tweet) string {
+	return tweet.Text
+}
+
+func tweetToTootV2(tweet *Tweet) string {
+	content := tweet.Text
+
+	// Mastodon doesn't engage in all the idiocy around shortened URLs, so
+	// expand everything out so we don't break the internet with the shortened
+	// versions.
+	if tweet.Entities != nil && tweet.Entities.URLs != nil {
+		for _, url := range tweet.Entities.URLs {
+			content = strings.Replace(content, url.URL, url.ExpandedURL, -1)
+		}
+	}
+
+	return content
 }
