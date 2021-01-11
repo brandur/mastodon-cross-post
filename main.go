@@ -1,13 +1,19 @@
 package main
 
 import (
+	"bufio"
 	"context"
 	"fmt"
+	"io"
 	"io/ioutil"
+	"net/http"
 	"os"
+	"path"
+	"path/filepath"
 	"strings"
 	"time"
 
+	"github.com/grokify/html-strip-tags-go"
 	"github.com/joeshaw/envdecode"
 	"github.com/mattn/go-mastodon"
 	"github.com/pelletier/go-toml"
@@ -39,7 +45,7 @@ func main() {
 		Server:      conf.MastodonServerURL,
 	})
 
-	err := syncTwitterToMastodon(context.Background(), &conf, client, source)
+	err := syncTwitter(context.Background(), &conf, client, source)
 	if err != nil {
 		die(fmt.Sprintf("error syncing: %v", err))
 	}
@@ -167,18 +173,91 @@ func die(message string) {
 	os.Exit(1)
 }
 
-func syncTweetToMastodon(ctx context.Context, conf *Conf, client *mastodon.Client, tweet *Tweet) error {
+func fetchURL(url, target string) error {
+	resp, err := http.Get(url)
+	if err != nil {
+		return fmt.Errorf("error fetching '%v': %w", url, err)
+	}
+	defer resp.Body.Close()
+
+	if resp.StatusCode != 200 {
+		return fmt.Errorf("unexpected status code fetching '%v': %d",
+			url, resp.StatusCode)
+	}
+
+	f, err := os.Create(target)
+	if err != nil {
+		return fmt.Errorf("Error creating '%v': %w", target, err)
+	}
+	defer f.Close()
+
+	w := bufio.NewWriter(f)
+
+	// probably not needed
+	defer w.Flush()
+
+	_, err = io.Copy(w, resp.Body)
+	if err != nil {
+		return fmt.Errorf("error copying to '%v' from HTTP response: %w",
+			target, err)
+	}
+
+	logger.Infof("Fetched '%s' to '%s'", url, target)
+
+	return nil
+}
+
+func syncMedia(ctx context.Context, conf *Conf, client *mastodon.Client, tweet *Tweet, tempDir string) ([]mastodon.ID, error) {
+	if tweet.Entities == nil || tweet.Entities.Medias == nil {
+		return nil, nil
+	}
+
+	var attachmentIDs []mastodon.ID
+
+	for _, media := range tweet.Entities.Medias {
+		if media.Type != "photo" {
+			continue
+		}
+
+		target := path.Join(tempDir, filepath.Base(media.URL))
+		err := fetchURL(media.URL, target)
+		if err != nil {
+			return nil, fmt.Errorf("error fetching media: %v", err)
+		}
+
+		if conf.DryRun {
+			logger.Infof("Would have synced media: %v", media.ID)
+		} else {
+			attachment, err := client.UploadMedia(ctx, target)
+			if err != nil {
+				return nil, fmt.Errorf("error uploading media: %v", err)
+			}
+
+			attachmentIDs = append(attachmentIDs, attachment.ID)
+		}
+	}
+
+	return attachmentIDs, nil
+}
+
+func syncTweet(ctx context.Context, conf *Conf, client *mastodon.Client, tweet *Tweet, tempDir string) error {
 	tweetSample := tweet.Text
 	if len(tweetSample) > 50 {
 		tweetSample = tweetSample[0:49] + " ..."
 		tweetSample = strings.Replace(tweetSample, "\n", " ", -1)
 	}
 
+	attachmentIDs, err := syncMedia(ctx, conf, client, tweet, tempDir)
+	if err != nil {
+		return fmt.Errorf("error syncing media: %w", err)
+	}
+
 	if conf.DryRun {
 		logger.Infof("Would have published tweet: %s", tweetSample)
 	} else {
 		status, err := client.PostStatus(ctx, &mastodon.Toot{
-			Status: tweet.Text,
+			MediaIDs: attachmentIDs,
+			Status:   tweet.Text,
 		})
 		if err != nil {
 			return fmt.Errorf("error posting status: %w", err)
@@ -190,7 +269,7 @@ func syncTweetToMastodon(ctx context.Context, conf *Conf, client *mastodon.Clien
 	return nil
 }
 
-func syncTwitterToMastodon(ctx context.Context, conf *Conf, client *mastodon.Client, source string) error {
+func syncTwitter(ctx context.Context, conf *Conf, client *mastodon.Client, source string) error {
 	existingData, err := ioutil.ReadFile(source)
 	if err != nil {
 		return fmt.Errorf("error reading source twitter data file: %w", err)
@@ -209,7 +288,7 @@ func syncTwitterToMastodon(ctx context.Context, conf *Conf, client *mastodon.Cli
 			break
 		}
 
-		// Don't include replies are @'s
+		// Don't include replies or @'s
 		if tweet.Reply != nil || strings.HasSuffix(tweet.Text, "@") {
 			continue
 		}
@@ -233,13 +312,16 @@ func syncTwitterToMastodon(ctx context.Context, conf *Conf, client *mastodon.Cli
 
 	var tweetsToSync []*Tweet
 
-	// Iterate in reverse order
-	for i := len(tweetCandidates) - 1; i >= 0; i-- {
-		tweet := tweetCandidates[i]
-
+	for _, tweet := range tweetCandidates {
 		var matchingStatus *mastodon.Status
 		for _, status := range statuses {
-			if status.Content == tweet.Text {
+			originalContent := status.Content
+			originalContent = strings.Replace(originalContent, "</p><p>", "\n\n", -1)
+			originalContent = strip.StripTags(originalContent)
+
+			//logger.Infof("status = %v", originalContent)
+			//logger.Infof("text = %v", tweet.Text)
+			if originalContent == tweet.Text {
 				matchingStatus = status
 				break
 			}
@@ -250,24 +332,43 @@ func syncTwitterToMastodon(ctx context.Context, conf *Conf, client *mastodon.Cli
 		} else {
 			logger.Infof("Found content match for tweet %v in Mastodon status %v",
 				tweet.ID, matchingStatus.ID)
+
+			// Assume that all tweets previous to this one have also already
+			// been synced. This simplifies the program so that we don't have
+			// to paginate all the way back in history, etc.
+			break
 		}
 	}
 
 	logger.Infof("Found %v tweet(s) to sync to Mastodon", len(tweetsToSync))
 
-	// Note these end up in chronological order, meaning we tweet the oldest
-	// tweets first, which is expected.
-	for i, tweet := range tweetsToSync {
-		if i >= conf.MaxTweetsToSync {
+	if len(tweetsToSync) < 1 {
+		return nil
+	}
+
+	tempDir, err := ioutil.TempDir("", "twitter-media-downloads")
+	if err != nil {
+		return fmt.Errorf("error creating temp dir: %w", err)
+	}
+	defer os.RemoveAll(tempDir)
+
+	tweetsSynced := 0
+
+	// Move in reverse order so that we tweet the oldest first.
+	for i := len(tweetsToSync) - 1; i >= 0; i-- {
+		tweet := tweetsToSync[i]
+
+		if tweetsSynced >= conf.MaxTweetsToSync {
 			logger.Infof("Hit maximum number of tweets to sync (%v); breaking",
 				conf.MaxTweetsToSync)
 			break
 		}
 
-		err := syncTweetToMastodon(ctx, conf, client, tweet)
+		err := syncTweet(ctx, conf, client, tweet, tempDir)
 		if err != nil {
 			return fmt.Errorf("error syncing tweet: %w", err)
 		}
+		tweetsSynced++
 	}
 
 	return nil
