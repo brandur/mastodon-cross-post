@@ -4,6 +4,7 @@ import (
 	"bufio"
 	"context"
 	"fmt"
+	"html"
 	"io"
 	"io/ioutil"
 	"net/http"
@@ -13,6 +14,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/agnivade/levenshtein"
 	"github.com/grokify/html-strip-tags-go"
 	"github.com/joeshaw/envdecode"
 	"github.com/mattn/go-mastodon"
@@ -313,15 +315,28 @@ func syncTwitter(ctx context.Context, conf *Conf, client *mastodon.Client, sourc
 	var tweetsToSync []*Tweet
 
 	for _, tweet := range tweetCandidates {
+		var distance int
 		var matchingStatus *mastodon.Status
 		for _, status := range statuses {
 			originalContent := status.Content
 			originalContent = strings.Replace(originalContent, "</p><p>", "\n\n", -1)
 			originalContent = strip.StripTags(originalContent)
+			originalContent = html.UnescapeString(originalContent)
 
 			//logger.Infof("status = %v", originalContent)
 			//logger.Infof("text = %v", tweet.Text)
-			if originalContent == tweet.Text {
+
+			// Unfortunately, once a status is posted to Masotodon, it does a
+			// lot of post-manipulation on the string, including adding HTML
+			// markup.
+			//
+			// I try to unwind it as much as possible above, and indeed I've
+			// gotten down to zero difference for my test cases, but I'm still
+			// worried this'll cause degenerate behavior along some edge I
+			// haven't tested. So here, we use Levenschtein distance to call a
+			// match as long as it looks reasonably close.
+			distance = levenshtein.ComputeDistance(originalContent, tweet.Text)
+			if distance < 10 {
 				matchingStatus = status
 				break
 			}
@@ -330,8 +345,8 @@ func syncTwitter(ctx context.Context, conf *Conf, client *mastodon.Client, sourc
 		if matchingStatus == nil {
 			tweetsToSync = append(tweetsToSync, tweet)
 		} else {
-			logger.Infof("Found content match for tweet %v in Mastodon status %v",
-				tweet.ID, matchingStatus.ID)
+			logger.Infof("Found content match for tweet %v in Mastodon status %v (distance: %v)",
+				tweet.ID, matchingStatus.ID, distance)
 
 			// Assume that all tweets previous to this one have also already
 			// been synced. This simplifies the program so that we don't have
