@@ -1,0 +1,5 @@
+export DRY_RUN=true
+export MASTODON_ACCESS_TOKEN=""
+export MASTODON_SERVER_URL="https://mastodon.social"
+export MAX_TWEETS_TO_SYNC=1
+export MIN_TWEET_ID=1345427415061827584
