@@ -36,6 +36,15 @@ func TestFindMatchingStatus(t *testing.T) {
 		assert.Equal(t, 8, distance)
 	})
 
+	t.Run("NoMatchTooFuzzy", func(t *testing.T) {
+		status, distance := findMatchingStatus(
+			statuses,
+			&Tweet{Text: `A basic tweet that will match against the first few cases. (fuzzy, but overly slow)`},
+		)
+		assert.Nil(t, status)
+		assert.Equal(t, 0, distance)
+	})
+
 	t.Run("TransformedMatch", func(t *testing.T) {
 		status, distance := findMatchingStatus(
 			statuses,

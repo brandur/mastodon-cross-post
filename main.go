@@ -265,6 +265,10 @@ StatusChecksLoop:
 		}
 	}
 
+	if matchingStatus == nil {
+		distance = 0
+	}
+
 	return matchingStatus, distance
 }
 
