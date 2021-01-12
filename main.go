@@ -26,6 +26,27 @@ import (
 //
 //
 //
+// Constants
+//
+//
+//
+//////////////////////////////////////////////////////////////////////////////
+
+// levenshteinDistanceTolerance is the maximum tolerance for when a Mastodon
+// status and tweet will be considered the same.
+//
+// Of course, we try and make sure that we can match content between the two
+// objects exactly (levenshtein of 0), but Mastodon transforms content sent to
+// them by doing things like adding HTML markup. We have a routine
+// (`tootToTweet`) that tries its best to undo this, but it's inevitable that
+// it eventually doesn't compensate for something, so try and protect against
+// that by doing fuzzy matching.
+const levenshteinDistanceTolerance = 10
+
+//////////////////////////////////////////////////////////////////////////////
+//
+//
+//
 // Main
 //
 //
@@ -353,7 +374,7 @@ func syncTwitter(ctx context.Context, conf *Conf, client *mastodon.Client, sourc
 				//logger.Infof("text = %v", tweet.Text)
 
 				distance = levenshtein.ComputeDistance(originalContent, tweetToToot(tweet))
-				if distance < 10 {
+				if distance < levenshteinDistanceTolerance {
 					matchingStatus = status
 					break StatusChecksLoop
 				}
