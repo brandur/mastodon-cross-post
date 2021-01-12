@@ -3,8 +3,36 @@ package main
 import (
 	"testing"
 
+	"github.com/mattn/go-mastodon"
 	assert "github.com/stretchr/testify/require"
 )
+
+func TestTootToTweet(t *testing.T) {
+	assert.Equal(t,
+		`RT @petervgeoghegan: Over 5 years ago my then-colleague @brandur wrote about problems with Postgres queues and the accumulation of garbage…`,
+		tootToTweet(&mastodon.Status{
+			Content: `<p>RT @petervgeoghegan: Over 5 years ago my then-colleague <span class="h-card"><a href="https://mastodon.social/@brandur" class="u-url mention">@<span>brandur</span></a></span> wrote about problems with Postgres queues and the accumulation of garbage…</p>`,
+		}),
+	)
+
+	assert.Equal(t,
+		`Nice thinking around easing Ractors into the Ruby ecosystem from @kirshatrov.
+
+Ruby relies heavily on global state so bringing them in at the "top" will be difficult initially, but they're more amenable at the "bottom" where less state needs to be shared.
+
+https://t.co/EF80vm1hEU`,
+		tootToTweet(&mastodon.Status{
+			Content: `<p>Nice thinking around easing Ractors into the Ruby ecosystem from @kirshatrov.</p><p>Ruby relies heavily on global state so bringing them in at the &quot;top&quot; will be difficult initially, but they&apos;re more amenable at the &quot;bottom&quot; where less state needs to be shared.</p><p><a href="https://t.co/EF80vm1hEU" rel="nofollow noopener noreferrer" target="_blank"><span class="invisible">https://</span><span class="">t.co/EF80vm1hEU</span><span class="invisible"></span></a></p>`,
+		}),
+	)
+
+	assert.Equal(t,
+		`A few romantic shots of Banff to help get your week started. Can't believe I'm still hiking in January. https://t.co/W5dsoSK8u7`,
+		tootToTweet(&mastodon.Status{
+			Content: `<p>A few romantic shots of Banff to help get your week started. Can&apos;t believe I&apos;m still hiking in January. <a href="https://t.co/W5dsoSK8u7" rel="nofollow noopener noreferrer" target="_blank"><span class="invisible">https://</span><span class="">t.co/W5dsoSK8u7</span><span class="invisible"></span></a></p>`,
+		}),
+	)
+}
 
 func TestTweetToTootV1(t *testing.T) {
 	t.Run("NoOps", func(t *testing.T) {

@@ -316,6 +316,12 @@ func syncTwitter(ctx context.Context, conf *Conf, client *mastodon.Client, sourc
 
 	var tweetsToSync []*Tweet
 
+	for _, status := range statuses {
+		logger.Infof("status = `%v`", status.Content)
+		logger.Infof("tootToTweet = `%v`", tootToTweet(status))
+		logger.Infof("")
+	}
+
 	for _, tweet := range tweetCandidates {
 		var distance int
 		var matchingStatus *mastodon.Status
@@ -429,7 +435,7 @@ func tweetToTootV2(tweet *Tweet) string {
 	}
 
 	// When tweet media is embedded, Twitter adds one last shortlink back to
-	// the original link, which we'll prune here.
+	// the original tweet, which we prune here.
 	//
 	// Note: This should come after our URL replacement step above so we
 	// eliminate the possibility of ever accidentally replacing a legitimate
