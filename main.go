@@ -231,6 +231,46 @@ func fetchURL(url, target string) error {
 	return nil
 }
 
+func findMatchingStatus(statuses []*mastodon.Status, tweet *Tweet) (*mastodon.Status, int) {
+	var distance int
+	var matchingStatus *mastodon.Status
+
+StatusChecksLoop:
+	for _, status := range statuses {
+		originalContent := tootToTweet(status)
+
+		// Go through every tweet to toot version we've ever had so that if a
+		// new one produces a significantly different enough result from one
+		// that posted an earlier status to Mastodon, we don't accidentally
+		// mistake it for a new tweet.
+		tweetToTootImplementations := []func(*Tweet) string{
+			tweetToTootV2,
+			tweetToTootV1,
+		}
+
+		// Unfortunately, once a status is posted to Masotodon, it does a lot
+		// of post-manipulation on the string, including adding HTML markup.
+		//
+		// I try to unwind it as much as possible above, and indeed I've gotten
+		// down to zero difference for my test cases, but I'm still worried
+		// this'll cause degenerate behavior along some edge I haven't tested.
+		// So here, we use Levenschtein distance to call a match as long as it
+		// looks reasonably close.
+		for _, tweetToToot := range tweetToTootImplementations {
+			//logger.Infof("status = %v", originalContent)
+			//logger.Infof("text = %v", tweet.Text)
+
+			distance = levenshtein.ComputeDistance(originalContent, tweetToToot(tweet))
+			if distance < levenshteinDistanceTolerance {
+				matchingStatus = status
+				break StatusChecksLoop
+			}
+		}
+	}
+
+	return matchingStatus, distance
+}
+
 func syncMedia(ctx context.Context, conf *Conf, client *mastodon.Client, tweet *Tweet, tempDir string) ([]mastodon.ID, error) {
 	if tweet.Entities == nil || tweet.Entities.Medias == nil {
 		return nil, nil
@@ -337,49 +377,8 @@ func syncTwitter(ctx context.Context, conf *Conf, client *mastodon.Client, sourc
 
 	var tweetsToSync []*Tweet
 
-	for _, status := range statuses {
-		logger.Infof("status = `%v`", status.Content)
-		logger.Infof("tootToTweet = `%v`", tootToTweet(status))
-		logger.Infof("")
-	}
-
 	for _, tweet := range tweetCandidates {
-		var distance int
-		var matchingStatus *mastodon.Status
-
-	StatusChecksLoop:
-		for _, status := range statuses {
-			originalContent := tootToTweet(status)
-
-			// Go through every tweet to toot version we've ever had so that if
-			// a new one produces a significantly different enough result from
-			// one that posted an earlier status to Mastodon, we don't
-			// accidentally mistake it for a new tweet.
-			tweetToTootImplementations := []func(*Tweet) string{
-				tweetToTootV2,
-				tweetToTootV1,
-			}
-
-			// Unfortunately, once a status is posted to Masotodon, it does a
-			// lot of post-manipulation on the string, including adding HTML
-			// markup.
-			//
-			// I try to unwind it as much as possible above, and indeed I've
-			// gotten down to zero difference for my test cases, but I'm still
-			// worried this'll cause degenerate behavior along some edge I
-			// haven't tested. So here, we use Levenschtein distance to call a
-			// match as long as it looks reasonably close.
-			for _, tweetToToot := range tweetToTootImplementations {
-				//logger.Infof("status = %v", originalContent)
-				//logger.Infof("text = %v", tweet.Text)
-
-				distance = levenshtein.ComputeDistance(originalContent, tweetToToot(tweet))
-				if distance < levenshteinDistanceTolerance {
-					matchingStatus = status
-					break StatusChecksLoop
-				}
-			}
-		}
+		matchingStatus, distance := findMatchingStatus(statuses, tweet)
 
 		if matchingStatus == nil {
 			tweetsToSync = append(tweetsToSync, tweet)
