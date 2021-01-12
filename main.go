@@ -271,6 +271,21 @@ StatusChecksLoop:
 	return matchingStatus, distance
 }
 
+func readTweetsFromFile(source string) ([]*Tweet, error) {
+	existingData, err := ioutil.ReadFile(source)
+	if err != nil {
+		return nil, fmt.Errorf("error reading source twitter data file: %w", err)
+	}
+
+	var existingTweetDB TweetDB
+	err = toml.Unmarshal(existingData, &existingTweetDB)
+	if err != nil {
+		return nil, fmt.Errorf("error unmarshaling toml: %w", err)
+	}
+
+	return existingTweetDB.Tweets, nil
+}
+
 func syncMedia(ctx context.Context, conf *Conf, client *mastodon.Client, tweet *Tweet, tempDir string) ([]mastodon.ID, error) {
 	if tweet.Entities == nil || tweet.Entities.Medias == nil {
 		return nil, nil
@@ -335,19 +350,13 @@ func syncTweet(ctx context.Context, conf *Conf, client *mastodon.Client, tweet *
 }
 
 func syncTwitter(ctx context.Context, conf *Conf, client *mastodon.Client, source string) error {
-	existingData, err := ioutil.ReadFile(source)
+	allTweets, err := readTweetsFromFile(source)
 	if err != nil {
-		return fmt.Errorf("error reading source twitter data file: %w", err)
-	}
-
-	var existingTweetDB TweetDB
-	err = toml.Unmarshal(existingData, &existingTweetDB)
-	if err != nil {
-		return fmt.Errorf("error unmarshaling toml: %w", err)
+		return err
 	}
 
 	var tweetCandidates []*Tweet
-	for _, tweet := range existingTweetDB.Tweets {
+	for _, tweet := range allTweets {
 		// Assume the file is ordered by descending tweet ID
 		if tweet.ID < conf.MinTweetID {
 			break
