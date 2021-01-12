@@ -7,6 +7,70 @@ import (
 	assert "github.com/stretchr/testify/require"
 )
 
+func TestFindMatchingStatus(t *testing.T) {
+	// Because we're using fuzzy matching instead of matching a perfect string,
+	// these will need to be sufficiently different for the results to be
+	// correct.
+	status1 := &mastodon.Status{Content: `This is the first tweet in the series and doesn't match anything.`}
+	status2 := &mastodon.Status{Content: `A basic tweet that will match against the first few cases.`}
+	status3 := &mastodon.Status{Content: `A tweet with Mastodon/Twitter different: https://this-should-be-a-pretty-long-link.example.com`}
+	status4 := &mastodon.Status{Content: `A tweet with Mastodon/Twitter different: https://short`}
+
+	statuses := []*mastodon.Status{status1, status2, status3, status4}
+
+	t.Run("BasicMatch", func(t *testing.T) {
+		status, distance := findMatchingStatus(
+			statuses,
+			&Tweet{Text: `A basic tweet that will match against the first few cases.`},
+		)
+		assert.Equal(t, status2, status)
+		assert.Equal(t, 0, distance)
+	})
+
+	t.Run("FuzzyMatch", func(t *testing.T) {
+		status, distance := findMatchingStatus(
+			statuses,
+			&Tweet{Text: `A basic tweet that will match against the first few cases. (fuzzy)`},
+		)
+		assert.Equal(t, status2, status)
+		assert.Equal(t, 8, distance)
+	})
+
+	t.Run("TransformedMatch", func(t *testing.T) {
+		status, distance := findMatchingStatus(
+			statuses,
+			&Tweet{
+				Text: `A tweet with Mastodon/Twitter different: https://short`,
+				Entities: &TweetEntities{
+					URLs: []*TweetEntitiesURL{
+						{URL: "https://short", ExpandedURL: "https://this-should-be-a-pretty-long-link.example.com"},
+					},
+				},
+			},
+		)
+		assert.Equal(t, status3, status)
+		assert.Equal(t, 0, distance)
+	})
+
+	// Simulates a posting before a new version into effect. We should still
+	// find a match by falling back to the old version.
+	t.Run("TransformedMatchOldVersion", func(t *testing.T) {
+		status, distance := findMatchingStatus(
+			statuses,
+			&Tweet{
+				Text: `A tweet with Mastodon/Twitter different: https://short`,
+				Entities: &TweetEntities{
+					URLs: []*TweetEntitiesURL{
+						{URL: "https://short", ExpandedURL: "https://this-should-be-a-pretty-long-link.example.com"},
+					},
+				},
+			},
+		)
+		assert.Equal(t, status3, status)
+		assert.Equal(t, 0, distance)
+	})
+}
+
 func TestTootToTweet(t *testing.T) {
 	assert.Equal(t,
 		`RT @petervgeoghegan: Over 5 years ago my then-colleague @brandur wrote about problems with Postgres queues and the accumulation of garbage…`,

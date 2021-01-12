@@ -257,9 +257,6 @@ StatusChecksLoop:
 		// So here, we use Levenschtein distance to call a match as long as it
 		// looks reasonably close.
 		for _, tweetToToot := range tweetToTootImplementations {
-			//logger.Infof("status = %v", originalContent)
-			//logger.Infof("text = %v", tweet.Text)
-
 			distance = levenshtein.ComputeDistance(originalContent, tweetToToot(tweet))
 			if distance < levenshteinDistanceTolerance {
 				matchingStatus = status
