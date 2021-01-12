@@ -1,4 +1,4 @@
-name: masodon-cross-post CI
+name: mastodon-cross-post CI
 
 on:
   pull_request:
