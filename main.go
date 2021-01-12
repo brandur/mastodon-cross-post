@@ -324,7 +324,7 @@ func syncTwitter(ctx context.Context, conf *Conf, client *mastodon.Client, sourc
 		for _, status := range statuses {
 			originalContent := tootToTweet(status)
 
-			// Go through every tweet to too version we've ever had so that if
+			// Go through every tweet to toot version we've ever had so that if
 			// a new one produces a significantly different enough result from
 			// one that posted an earlier status to Mastodon, we don't
 			// accidentally mistake it for a new tweet.
