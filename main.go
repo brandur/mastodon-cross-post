@@ -26,27 +26,6 @@ import (
 //
 //
 //
-// Constants
-//
-//
-//
-//////////////////////////////////////////////////////////////////////////////
-
-// levenshteinDistanceTolerance is the maximum tolerance for when a Mastodon
-// status and tweet will be considered the same.
-//
-// Of course, we try and make sure that we can match content between the two
-// objects exactly (levenshtein of 0), but Mastodon transforms content sent to
-// them by doing things like adding HTML markup. We have a routine
-// (`tootToTweet`) that tries its best to undo this, but it's inevitable that
-// it eventually doesn't compensate for something, so try and protect against
-// that by doing fuzzy matching.
-const levenshteinDistanceTolerance = 10
-
-//////////////////////////////////////////////////////////////////////////////
-//
-//
-//
 // Main
 //
 //
@@ -74,6 +53,39 @@ func main() {
 		die(fmt.Sprintf("error syncing: %v", err))
 	}
 }
+
+//////////////////////////////////////////////////////////////////////////////
+//
+//
+//
+// Constants
+//
+//
+//
+//////////////////////////////////////////////////////////////////////////////
+
+// levenshteinDistanceTolerance is the maximum tolerance for when a Mastodon
+// status and tweet will be considered the same.
+//
+// Of course, we try and make sure that we can match content between the two
+// objects exactly (levenshtein of 0), but Mastodon transforms content sent to
+// them by doing things like adding HTML markup. We have a routine
+// (`tootToTweet`) that tries its best to undo this, but it's inevitable that
+// it eventually doesn't compensate for something, so try and protect against
+// that by doing fuzzy matching.
+const levenshteinDistanceTolerance = 10
+
+//////////////////////////////////////////////////////////////////////////////
+//
+//
+//
+// Variables
+//
+//
+//
+//////////////////////////////////////////////////////////////////////////////
+
+var logger = &LeveledLogger{Level: LevelInfo}
 
 //////////////////////////////////////////////////////////////////////////////
 //
@@ -169,18 +181,6 @@ type TweetRetweet struct {
 	User     string `toml:"user"`
 	UserID   int64  `toml:"user_id"`
 }
-
-//////////////////////////////////////////////////////////////////////////////
-//
-//
-//
-// Variables
-//
-//
-//
-//////////////////////////////////////////////////////////////////////////////
-
-var logger = &LeveledLogger{Level: LevelInfo}
 
 //////////////////////////////////////////////////////////////////////////////
 //
