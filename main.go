@@ -446,6 +446,9 @@ func tweetToTootV1(tweet *Tweet) string {
 	return tweet.Text
 }
 
+// Match a t.co shortlink at the end of a tweet. These tend to be added by
+// Twitter for tweets with media embeds, and aren't really needed for anything
+// as the media is already embedded inline.
 var endTcoShortLinkRE = regexp.MustCompile(` https://t\.co/\w{5,}$`)
 
 func tweetToTootV2(tweet *Tweet) string {
