@@ -321,10 +321,12 @@ func syncMedia(ctx context.Context, conf *Conf, client *mastodon.Client, tweet *
 }
 
 func syncTweet(ctx context.Context, conf *Conf, client *mastodon.Client, tweet *Tweet, tempDir string) error {
-	tweetSample := tweet.Text
-	if len(tweetSample) > 50 {
-		tweetSample = tweetSample[0:49] + " ..."
-		tweetSample = strings.Replace(tweetSample, "\n", " ", -1)
+	content := tweetToTootV2(tweet)
+
+	contentSample := content
+	if len(contentSample) > 50 {
+		contentSample = contentSample[0:49] + " ..."
+		contentSample = strings.Replace(contentSample, "\n", " ", -1)
 	}
 
 	attachmentIDs, err := syncMedia(ctx, conf, client, tweet, tempDir)
@@ -333,18 +335,18 @@ func syncTweet(ctx context.Context, conf *Conf, client *mastodon.Client, tweet *
 	}
 
 	if conf.DryRun {
-		logger.Infof("Would have published tweet: %s", tweetSample)
+		logger.Infof("Would have published Mastodon status: %s", contentSample)
 	} else {
 
 		status, err := client.PostStatus(ctx, &mastodon.Toot{
 			MediaIDs: attachmentIDs,
-			Status:   tweetToTootV1(tweet),
+			Status:   content,
 		})
 		if err != nil {
 			return fmt.Errorf("error posting status: %w", err)
 		}
 
-		logger.Infof("Posted status: %v (%s)", status.ID, tweetSample)
+		logger.Infof("Posted Mastodon status: %v (%s)", status.ID, contentSample)
 	}
 
 	return nil
